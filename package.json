@@ -1,0 +1,19 @@
+{
+  "name": "cloudflare-ton-exchange-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@ton/core": "0.63.1",
+    "@ton/crypto": "3.3.0",
+    "@ton/ton": "16.3.0",
+    "buffer": "6.0.3"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
