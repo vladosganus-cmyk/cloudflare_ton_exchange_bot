@@ -10,7 +10,7 @@
     {
       "binding": "DB",
       "database_name": "ton-exchange-bot-db",
-      "database_id": "PUT_YOUR_D1_DATABASE_ID_HERE"
+      "database_id": "dc960b1b-0302-4fa3-bf91-508ad3c9b06e"
     }
   ]
 }
