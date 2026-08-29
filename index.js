@@ -1253,55 +1253,89 @@ async function sendTon(env, toAddress, amountTon) {
 
 async function getTonUahPrice() {
   const [tonUsd, usdUah] = await Promise.all([getTonUsdPrice(), getUsdUahRate()]);
-  if (!tonUsd || !usdUah) return null;
+  if (!tonUsd || !usdUah) {
+    console.error(`getTonUahPrice: tonUsd=${tonUsd}, usdUah=${usdUah}`);
+    return null;
+  }
   return Math.round(tonUsd * usdUah * 100) / 100;
 }
 
-async function getTonUsdPrice() {
+async function fetchJson(url, label, options = {}) {
   try {
-    const r = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd", {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; ton-exchange-bot/1.0)" }
+    const r = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; ton-exchange-bot/1.0)",
+        "Accept": "application/json",
+        ...(options.headers || {})
+      }
     });
-    if (r.ok) {
-      const d = await r.json();
-      const v = Number(d?.["the-open-network"]?.usd);
-      if (v > 0) return v;
+    const text = await r.text();
+    if (!r.ok) {
+      console.error(`[${label}] HTTP ${r.status}: ${text.slice(0, 300)}`);
+      return null;
     }
-  } catch {}
-  try {
-    const r = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=TONUSDT");
-    if (r.ok) {
-      const d = await r.json();
-      const v = Number(d?.price);
-      if (v > 0) return v;
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      console.error(`[${label}] Не JSON у відповіді (можливо антибот-challenge): ${text.slice(0, 300)}`);
+      return null;
     }
-  } catch {}
+  } catch (e) {
+    console.error(`[${label}] Помилка мережі: ${e?.message || e}`);
+    return null;
+  }
+}
+
+async function getTonUsdPrice() {
+  // 1) CoinGecko
+  let d = await fetchJson(
+    "https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd",
+    "CoinGecko"
+  );
+  let v = Number(d?.["the-open-network"]?.usd);
+  if (v > 0) return v;
+
+  // 2) Binance
+  d = await fetchJson("https://api.binance.com/api/v3/ticker/price?symbol=TONUSDT", "Binance");
+  v = Number(d?.price);
+  if (v > 0) return v;
+
+  // 3) tonapi.io — зазвичай дружніше ставиться до запитів з Cloudflare Workers
+  d = await fetchJson("https://tonapi.io/v2/rates?tokens=ton&currencies=usd", "tonapi.io");
+  v = Number(d?.rates?.TON?.prices?.USD);
+  if (v > 0) return v;
+
+  console.error("getTonUsdPrice: усі джерела недоступні");
   return null;
 }
 
 async function getUsdUahRate() {
-  try {
-    const r = await fetch("https://api.monobank.ua/bank/currency", {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; ton-exchange-bot/1.0)" }
-    });
-    if (r.ok) {
-      const d = await r.json();
-      for (const x of d) {
-        if (x.currencyCodeA === 840 && x.currencyCodeB === 980) {
-          const v = Number(x.rateSell || x.rateCross);
-          if (v > 0) return v;
-        }
+  // 1) Monobank
+  let d = await fetchJson("https://api.monobank.ua/bank/currency", "Monobank");
+  if (Array.isArray(d)) {
+    for (const x of d) {
+      if (x.currencyCodeA === 840 && x.currencyCodeB === 980) {
+        const v = Number(x.rateSell || x.rateCross);
+        if (v > 0) return v;
       }
     }
-  } catch {}
-  try {
-    const r = await fetch("https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?valcode=USD&json");
-    if (r.ok) {
-      const d = await r.json();
-      const v = Number(d?.[0]?.rate);
-      if (v > 0) return v;
-    }
-  } catch {}
+    console.error("[Monobank] У відповіді не знайдено пари USD/UAH");
+  }
+
+  // 2) НБУ офіційний курс
+  d = await fetchJson("https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?valcode=USD&json", "НБУ");
+  let v = Number(d?.[0]?.rate);
+  if (v > 0) return v;
+
+  // 3) ПриватБанк — ще один незалежний резерв
+  d = await fetchJson("https://api.privatbank.ua/p24api/pubinfo?json&exchange&coursid=5", "ПриватБанк");
+  if (Array.isArray(d)) {
+    const row = d.find((x) => x.ccy === "USD" && x.base_ccy === "UAH");
+    v = Number(row?.sale);
+    if (v > 0) return v;
+  }
+
+  console.error("getUsdUahRate: усі джерела недоступні");
   return null;
 }
 
